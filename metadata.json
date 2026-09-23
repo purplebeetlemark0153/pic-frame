@@ -1,0 +1,6 @@
+{
+  "name": "自由圖片版面設計工具",
+  "description": "簡單、直覺、可靠的自由圖片版面設計工具，支援圖框建立、圖片文字排版、獨立旋轉、圖層管理與高解析度匯出。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
