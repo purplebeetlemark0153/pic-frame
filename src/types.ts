@@ -122,7 +122,15 @@ export type EditorMode =
   | 'frame-edit'
   | 'image-edit'
   | 'text-edit'
-  | 'polygon-create';
+  | 'polygon-create'
+  | 'eyedropper';
+
+export type EyedropperTarget =
+  | 'canvas-background'
+  | 'frame-border'
+  | 'frame-background'
+  | 'text-color'
+  | 'any';
 
 export type OverlapMode = 'allowed' | 'forbidden';
 

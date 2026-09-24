@@ -16,6 +16,7 @@ import {
   ProjectData,
   RotationDialogRequest,
   ContentSwitchDialogRequest,
+  EyedropperTarget,
 } from './types';
 import { Toolbar } from './components/Toolbar';
 import { TopBar } from './components/TopBar';
@@ -23,6 +24,8 @@ import { PropertiesPanel } from './components/PropertiesPanel';
 import { CanvasArea } from './components/CanvasArea';
 import { RotationConfirmModal } from './components/RotationConfirmModal';
 import { ContentSwitchModal } from './components/ContentSwitchModal';
+import { EyedropperResultModal } from './components/EyedropperResultModal';
+import { sampleCanvasPixel } from './utils/canvasRenderer';
 import { fileToBase64, exportToPNG, exportToJPG, exportToPDF, exportToDOCX, saveProjectToFile, loadProjectFromFile } from './utils/exportUtils';
 
 import { CanvasPresetInfo } from './types';
@@ -158,6 +161,24 @@ export default function App() {
   const [contentSwitchDialogReq, setContentSwitchDialogReq] = useState<ContentSwitchDialogRequest | null>(null);
   const [clipboard, setClipboard] = useState<FrameData | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Eyedropper state
+  const [eyedropperSampledColor, setEyedropperSampledColor] = useState<string | null>(null);
+  const eyedropperTargetRef = useRef<EyedropperTarget>('any');
+
+  // Recently sampled colors for eyedropper & quick palettes
+  const [recentColors, setRecentColors] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('layout_designer_recent_colors');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // fallback to stylish default design palette
+    }
+    return ['#556354', '#8c7a65', '#2c2824', '#ffffff', '#e5e1d8', '#3498db', '#e74c3c', '#f1c40f'];
+  });
 
   // Maintain synchronous references to avoid stale closure in callbacks
   const framesRef = useRef(frames);
@@ -326,6 +347,171 @@ export default function App() {
       });
     },
     [pushHistorySnapshot]
+  );
+
+  // Save color to recent colors list and localStorage
+  const saveRecentColor = useCallback((color: string) => {
+    setRecentColors((prev) => {
+      const filtered = prev.filter((c) => c.toLowerCase() !== color.toLowerCase());
+      const next = [color, ...filtered].slice(0, 16);
+      try {
+        localStorage.setItem('layout_designer_recent_colors', JSON.stringify(next));
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  }, []);
+
+  // Handle color sampled from Eyedropper
+  const handleColorSampled = useCallback(
+    (color: string, target: EyedropperTarget = 'any') => {
+      saveRecentColor(color);
+
+      if (target === 'canvas-background') {
+        setCanvas((prev) => {
+          const updated: CanvasData = {
+            ...prev,
+            backgroundType: 'solid',
+            background: color,
+          };
+          canvasRef.current = updated;
+          pushHistorySnapshot({ canvas: updated });
+          return updated;
+        });
+        showToast(`已將畫布底色填滿為 ${color}`);
+        return;
+      }
+
+      if (target === 'frame-border') {
+        const curSelected = selectedFrameIdsRef.current;
+        if (curSelected.length > 0) {
+          setFrames((prev) => {
+            const updated = prev.map((f) => {
+              if (curSelected.includes(f.id)) {
+                return {
+                  ...f,
+                  border: {
+                    ...f.border,
+                    color,
+                    width: f.border?.width && f.border.width > 0 ? f.border.width : 2,
+                    style: f.border?.style || 'solid',
+                  },
+                };
+              }
+              return f;
+            });
+            framesRef.current = updated;
+            pushHistorySnapshot({ frames: updated });
+            return updated;
+          });
+          showToast(`已將選取圖框邊框設為 ${color}`);
+        } else {
+          showToast(`吸取顏色：${color} (請先選取圖框以設定邊框)`);
+        }
+        return;
+      }
+
+      if (target === 'frame-background') {
+        const curSelected = selectedFrameIdsRef.current;
+        if (curSelected.length > 0) {
+          setFrames((prev) => {
+            const updated = prev.map((f) => {
+              if (curSelected.includes(f.id)) {
+                return {
+                  ...f,
+                  background: color,
+                };
+              }
+              return f;
+            });
+            framesRef.current = updated;
+            pushHistorySnapshot({ frames: updated });
+            return updated;
+          });
+          showToast(`已將選取圖框底色設為 ${color}`);
+        } else {
+          showToast(`吸取顏色：${color} (請先選取圖框以設定底色)`);
+        }
+        return;
+      }
+
+      if (target === 'text-color') {
+        const curSelected = selectedFrameIdsRef.current;
+        if (curSelected.length > 0) {
+          setFrames((prev) => {
+            const updated = prev.map((f) => {
+              if (curSelected.includes(f.id) && f.contentType === 'text' && f.text) {
+                return {
+                  ...f,
+                  text: {
+                    ...f.text,
+                    color,
+                  },
+                };
+              }
+              return f;
+            });
+            framesRef.current = updated;
+            pushHistorySnapshot({ frames: updated });
+            return updated;
+          });
+          showToast(`已將選取文字顏色設為 ${color}`);
+        } else {
+          showToast(`吸取顏色：${color} (請先選取文字圖框以修改字體色彩)`);
+        }
+        return;
+      }
+
+      // Default 'any': Open the EyedropperResultModal dialog
+      setEyedropperSampledColor(color);
+    },
+    [pushHistorySnapshot, saveRecentColor]
+  );
+
+  // Activate Eyedropper tool
+  const handleActivateEyedropper = useCallback(
+    async (target: EyedropperTarget = 'any') => {
+      eyedropperTargetRef.current = target;
+
+      // Check if browser natively supports EyeDropper API (Chromium / Edge / Opera)
+      if (typeof window !== 'undefined' && 'EyeDropper' in window) {
+        try {
+          const eyeDropper = new (window as any).EyeDropper();
+          const result = await eyeDropper.open();
+          if (result && result.sRGBHex) {
+            handleColorSampled(result.sRGBHex.toLowerCase(), target);
+            return;
+          }
+        } catch (err: any) {
+          if (err?.name === 'AbortError') {
+            return; // Cancelled by user with Esc
+          }
+          console.warn('Native EyeDropper API fallback to canvas sampler:', err);
+        }
+      }
+
+      // Fallback: in-canvas pixel sampler mode
+      setMode('eyedropper');
+      showToast('滴管吸色模式：點擊畫布或圖片任一處吸取顏色 (按 Esc 取消)');
+    },
+    [handleColorSampled]
+  );
+
+  // Handle in-canvas pixel sample click
+  const handleCanvasSampleColor = useCallback(
+    async (canvasX: number, canvasY: number) => {
+      try {
+        const color = await sampleCanvasPixel(canvasRef.current, framesRef.current, canvasX, canvasY);
+        setMode('select');
+        handleColorSampled(color, eyedropperTargetRef.current);
+      } catch (err) {
+        console.error('Canvas pixel sampling error:', err);
+        setMode('select');
+        showToast('吸取顏色失敗，請重試');
+      }
+    },
+    [handleColorSampled]
   );
 
   // Selection handler
@@ -1118,16 +1304,23 @@ export default function App() {
         });
       }
 
-      // Escape: Deselect all
+      // Eyedropper shortcut ('I' or 'i')
+      if ((e.key === 'i' || e.key === 'I') && !isInput && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        handleActivateEyedropper('any');
+      }
+
+      // Escape: Deselect all and exit eyedropper
       if (e.key === 'Escape') {
         setSelectedFrameIds([]);
         setMode('select');
+        setEyedropperSampledColor(null);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo, selectedFrameIds, frames, clipboard, commitHistory]);
+  }, [handleUndo, handleRedo, selectedFrameIds, frames, clipboard, commitHistory, handleActivateEyedropper]);
 
   const selectedFrames = frames.filter((f) => selectedFrameIds.includes(f.id));
 
@@ -1174,6 +1367,7 @@ export default function App() {
           onAddTextFrame={handleAddTextFrame}
           onUploadImageToSelectedOrNew={handleUploadImageToSelectedOrNew}
           onSelectBackground={() => setSelectedFrameIds([])}
+          onActivateEyedropper={() => handleActivateEyedropper('any')}
         />
 
         {/* Center Canvas Area */}
@@ -1206,6 +1400,7 @@ export default function App() {
           onBringFront={handleBringFront}
           onReplaceImage={handleReplaceImage}
           onZoomChange={(newZoom) => setCanvas((prev) => ({ ...prev, zoom: newZoom }))}
+          onCanvasSampleColor={handleCanvasSampleColor}
         />
 
         {/* Right Properties Panel */}
@@ -1226,6 +1421,8 @@ export default function App() {
           onAlignMulti={handleAlignMulti}
           onEqualizeMulti={handleEqualizeMulti}
           onDistributeMulti={handleDistributeMulti}
+          onTriggerEyedropper={handleActivateEyedropper}
+          recentColors={recentColors}
         />
       </div>
 
@@ -1241,6 +1438,31 @@ export default function App() {
 
       {/* Content Switching Confirmation Modal (Section 24) */}
       {contentSwitchDialogReq && <ContentSwitchModal request={contentSwitchDialogReq} />}
+
+      {/* Eyedropper Sampled Color Action Modal */}
+      {eyedropperSampledColor && (
+        <EyedropperResultModal
+          color={eyedropperSampledColor}
+          selectedFrames={selectedFrames}
+          onApplyToCanvasBackground={(color) => {
+            handleColorSampled(color, 'canvas-background');
+            setEyedropperSampledColor(null);
+          }}
+          onApplyToFrameBorder={(color) => {
+            handleColorSampled(color, 'frame-border');
+            setEyedropperSampledColor(null);
+          }}
+          onApplyToFrameBackground={(color) => {
+            handleColorSampled(color, 'frame-background');
+            setEyedropperSampledColor(null);
+          }}
+          onApplyToTextColor={(color) => {
+            handleColorSampled(color, 'text-color');
+            setEyedropperSampledColor(null);
+          }}
+          onClose={() => setEyedropperSampledColor(null)}
+        />
+      )}
     </div>
   );
 }

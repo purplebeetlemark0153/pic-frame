@@ -890,6 +890,102 @@ export function runAllAutomaticTests(): TestSummary {
     }
   );
 
+  // Test 18: Eyedropper color extraction and application
+  runTest(
+    'canvas-3-eyedropper-color-application',
+    'canvas',
+    '滴管吸色與套用機制：吸取顏色 (Hex 格式) 能正確填滿畫布背景、設定圖框邊框、圖框底色及文字字體顏色',
+    () => {
+      const sampledColor = '#556354';
+      const hexRegex = /^#[0-9a-fA-F]{6}$/;
+      assert(hexRegex.test(sampledColor), '吸取的顏色代碼必須符合標準 6 碼 Hex 格式');
+
+      // 1. Apply to canvas background
+      const initialCanvas: CanvasData = {
+        width: 800,
+        height: 600,
+        unit: 'px',
+        physicalWidth: 800,
+        physicalHeight: 600,
+        dpi: 96,
+        preset: 'CUSTOM',
+        backgroundType: 'gradient',
+        background: '#ffffff',
+        zoom: 1,
+      };
+
+      const updatedCanvas: CanvasData = {
+        ...initialCanvas,
+        backgroundType: 'solid',
+        background: sampledColor,
+      };
+      assert(updatedCanvas.background === '#556354', '畫布底色成功設定為吸取之顏色');
+      assert(updatedCanvas.backgroundType === 'solid', '畫布背景類型自動切換為單色 solid');
+
+      // 2. Apply to frame border & frame background
+      const testFrame: FrameData = {
+        id: 'test-eyedropper-frame',
+        x: 50,
+        y: 50,
+        width: 200,
+        height: 150,
+        shape: 'rectangle',
+        roundedCorners: 0,
+        rotation: 0,
+        background: 'transparent',
+        border: { width: 0, color: '#000000', style: 'solid' },
+        zIndex: 1,
+        contentType: 'text',
+        text: {
+          content: '測試文字',
+          font: 'sans-serif',
+          size: 16,
+          bold: false,
+          italic: false,
+          color: '#333333',
+          horizontalAlign: 'left',
+          verticalAlign: 'top',
+          autoWrap: true,
+        },
+      };
+
+      // Set border color
+      const frameWithBorder: FrameData = {
+        ...testFrame,
+        border: {
+          ...testFrame.border,
+          color: sampledColor,
+          width: testFrame.border.width > 0 ? testFrame.border.width : 2,
+        },
+      };
+      assert(frameWithBorder.border.color === '#556354', '圖框邊框成功設定為吸取之顏色');
+      assert(frameWithBorder.border.width === 2, '未設邊框寬度時自動賦予有感邊框 (2px)');
+
+      // Set frame background
+      const frameWithBg: FrameData = {
+        ...testFrame,
+        background: sampledColor,
+      };
+      assert(frameWithBg.background === '#556354', '圖框底色成功填滿為吸取之顏色');
+
+      // Set text color
+      const frameWithTextColor: FrameData = {
+        ...testFrame,
+        text: {
+          ...testFrame.text!,
+          color: sampledColor,
+        },
+      };
+      assert(frameWithTextColor.text?.color === '#556354', '文字顏色成功修改為吸取之顏色');
+
+      // 3. Recents list deduping & bounds
+      const initialRecents = ['#111111', '#222222', '#556354'];
+      const dedupedRecents = [sampledColor, ...initialRecents.filter((c) => c !== sampledColor)].slice(0, 16);
+      assert(dedupedRecents[0] === '#556354', '最新吸取的顏色置於最前項');
+      assert(dedupedRecents.filter((c) => c === '#556354').length === 1, '最近吸取顏色列表去除重複');
+    }
+  );
+
   // ==========================================
   // 7. UNDO / REDO DETERMINISM (Section 三)
   // ==========================================

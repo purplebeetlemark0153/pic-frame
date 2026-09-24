@@ -9,6 +9,7 @@ import {
   Image as ImageIcon,
   Palette,
   Grid,
+  Pipette,
 } from 'lucide-react';
 import { EditorMode, FrameShape } from '../types';
 
@@ -21,6 +22,7 @@ interface Props {
   onAddTextFrame: () => void;
   onUploadImageToSelectedOrNew: (file: File) => void;
   onSelectBackground: () => void;
+  onActivateEyedropper?: () => void;
   onOpenSelfTest?: () => void;
 }
 
@@ -33,6 +35,7 @@ export const Toolbar: React.FC<Props> = ({
   onAddTextFrame,
   onUploadImageToSelectedOrNew,
   onSelectBackground,
+  onActivateEyedropper,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -164,6 +167,21 @@ export const Toolbar: React.FC<Props> = ({
       >
         <Palette className="w-5 h-5 mb-0.5 group-hover:scale-105 transition-transform" />
         <span className="text-[10px] font-medium leading-none">背景</span>
+      </button>
+
+      {/* Eyedropper Tool */}
+      <button
+        id="tool-eyedropper"
+        onClick={onActivateEyedropper}
+        title="顏色滴管：吸取畫布、圖片或網頁上的任何顏色 (快捷鍵: I)"
+        className={`w-12 h-12 flex flex-col items-center justify-center rounded-xl transition-all cursor-pointer group ${
+          mode === 'eyedropper'
+            ? 'bg-[#556354] text-white shadow-xs'
+            : 'hover:bg-[#eae6dc] text-[#6d6459] hover:text-[#2c2722]'
+        }`}
+      >
+        <Pipette className="w-5 h-5 mb-0.5 group-hover:scale-105 transition-transform" />
+        <span className="text-[10px] font-medium leading-none">滴管</span>
       </button>
 
       {/* Grid Toggle Tool */}

@@ -20,7 +20,7 @@ import {
 } from '../utils/geometry';
 import { buildFramePath } from '../utils/canvasRenderer';
 import { getPaperTextureSvgDataUri } from '../utils/texturePatterns';
-import { RotateCw, AlertCircle, Type, Upload, Check, RefreshCw, Move, Crop } from 'lucide-react';
+import { RotateCw, AlertCircle, Type, Upload, Check, RefreshCw, Move, Crop, Pipette } from 'lucide-react';
 
 interface Props {
   canvas: CanvasData;
@@ -39,6 +39,7 @@ interface Props {
   onBringFront: (frameId: string) => void;
   onReplaceImage?: (frameId: string, file: File) => void;
   onZoomChange?: (zoom: number) => void;
+  onCanvasSampleColor?: (canvasX: number, canvasY: number) => void;
 }
 
 interface DragState {
@@ -74,6 +75,7 @@ export const CanvasArea: React.FC<Props> = ({
   onBringFront,
   onReplaceImage,
   onZoomChange,
+  onCanvasSampleColor,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -241,6 +243,12 @@ export const CanvasArea: React.FC<Props> = ({
 
     const canvasPt = screenToCanvas(e.clientX, e.clientY);
 
+    // Eyedropper color sampling mode
+    if (mode === 'eyedropper') {
+      onCanvasSampleColor?.(canvasPt.x, canvasPt.y);
+      return;
+    }
+
     // Polygon creation mode
     if (mode === 'polygon-create') {
       // Check if clicking close to first point
@@ -336,6 +344,12 @@ export const CanvasArea: React.FC<Props> = ({
   const handleFramePointerDown = (e: React.PointerEvent, frame: FrameData) => {
     if (isSpacePressed || e.button === 1) {
       handleViewportPointerDown(e);
+      return;
+    }
+    if (mode === 'eyedropper') {
+      e.stopPropagation();
+      const canvasPt = screenToCanvas(e.clientX, e.clientY);
+      onCanvasSampleColor?.(canvasPt.x, canvasPt.y);
       return;
     }
     e.stopPropagation();
@@ -757,9 +771,29 @@ export const CanvasArea: React.FC<Props> = ({
       id="canvas-viewport"
       onPointerDown={handleViewportPointerDown}
       className={`flex-1 bg-[#ede9df] overflow-auto relative select-none ${
-        isSpacePressed ? (dragState?.type === 'pan' ? 'cursor-grabbing' : 'cursor-grab') : ''
+        mode === 'eyedropper'
+          ? 'cursor-crosshair'
+          : isSpacePressed
+          ? dragState?.type === 'pan'
+            ? 'cursor-grabbing'
+            : 'cursor-grab'
+          : ''
       }`}
     >
+      {/* Eyedropper Sampler Mode Banner */}
+      {mode === 'eyedropper' && (
+        <div className="absolute top-4 left-6 z-40 bg-[#faf9f5] border border-[#d8d3c5] text-[#3e372e] px-3.5 py-1.5 rounded-lg text-xs flex items-center gap-2 shadow-md animate-in fade-in">
+          <Pipette className="w-4 h-4 text-[#556354] animate-pulse" />
+          <span>滴管吸色模式：點擊畫布或圖片上的任一點以提取顏色 (按 Esc 取消)</span>
+          <button
+            onClick={() => onSetMode('select')}
+            className="ml-2 px-2 py-0.5 bg-[#edeae1] hover:bg-[#dcd7cb] text-[#556354] rounded text-[11px] cursor-pointer"
+          >
+            取消
+          </button>
+        </div>
+      )}
+
       {/* Overlap Revert Alert Notification */}
       {overlapNotification && (
         <div className="absolute top-4 z-50 flex items-center gap-2 bg-[#fdf5ed] border border-[#dfbfa8] text-[#874f2d] px-4 py-2 rounded-xl shadow-lg text-xs animate-in fade-in slide-in-from-top-2">

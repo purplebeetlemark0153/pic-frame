@@ -5,6 +5,7 @@ import {
   Point,
   ImageEffects,
   PaperTextureType,
+  EyedropperTarget,
 } from '../types';
 import {
   Copy,
@@ -40,6 +41,7 @@ import {
   RotateCcw,
   Scroll,
   Crop,
+  Pipette,
 } from 'lucide-react';
 
 interface Props {
@@ -60,6 +62,8 @@ interface Props {
   onAlignMulti: (alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => void;
   onEqualizeMulti: (dimension: 'width' | 'height') => void;
   onDistributeMulti: (direction: 'horizontal' | 'vertical') => void;
+  onTriggerEyedropper?: (target?: EyedropperTarget) => void;
+  recentColors?: string[];
 }
 
 export const PropertiesPanel: React.FC<Props> = ({
@@ -79,6 +83,8 @@ export const PropertiesPanel: React.FC<Props> = ({
   onAlignMulti,
   onEqualizeMulti,
   onDistributeMulti,
+  onTriggerEyedropper,
+  recentColors = [],
 }) => {
   const replaceImgInputRef = useRef<HTMLInputElement>(null);
   const bgImgInputRef = useRef<HTMLInputElement>(null);
@@ -257,7 +263,18 @@ export const PropertiesPanel: React.FC<Props> = ({
         {/* Solid Color */}
         {canvas.backgroundType === 'solid' && (
           <div className="space-y-2">
-            <label className="text-[11px] font-medium text-[#736c62] block">畫布底色</label>
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-medium text-[#736c62] block">畫布底色</label>
+              <button
+                type="button"
+                onClick={() => onTriggerEyedropper?.('canvas-background')}
+                title="使用滴管吸取螢幕/圖片顏色設為畫布底色"
+                className="flex items-center gap-1 text-[10px] text-[#556354] hover:text-[#2c2824] cursor-pointer"
+              >
+                <Pipette className="w-3 h-3" />
+                <span>吸取顏色</span>
+              </button>
+            </div>
             <div className="flex items-center gap-2">
               <input
                 type="color"
@@ -271,7 +288,30 @@ export const PropertiesPanel: React.FC<Props> = ({
                 onChange={(e) => onUpdateCanvas({ background: e.target.value })}
                 className="flex-1 bg-[#ffffff] border border-[#d8d3c5] rounded px-2.5 py-1 text-xs text-[#2c2824] font-mono focus:outline-none focus:border-[#556354]"
               />
+              <button
+                type="button"
+                onClick={() => onTriggerEyedropper?.('canvas-background')}
+                title="使用滴管吸取螢幕/圖片顏色設為畫布底色"
+                className="p-1.5 rounded border border-[#d8d3c5] bg-[#faf9f6] hover:bg-[#edeae1] text-[#556354] cursor-pointer"
+              >
+                <Pipette className="w-3.5 h-3.5" />
+              </button>
             </div>
+            {recentColors && recentColors.length > 0 && (
+              <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
+                <span className="text-[10px] text-[#8c8275]">吸取/常用：</span>
+                {recentColors.slice(0, 8).map((col, idx) => (
+                  <button
+                    key={`bg-recent-${col}-${idx}`}
+                    type="button"
+                    onClick={() => onUpdateCanvas({ background: col })}
+                    title={`套用 ${col}`}
+                    className="w-4 h-4 rounded-full border border-black/15 hover:scale-115 transition-transform cursor-pointer"
+                    style={{ backgroundColor: col }}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -712,24 +752,50 @@ export const PropertiesPanel: React.FC<Props> = ({
         <label className="text-[11px] font-medium text-[#736c62] block">外觀與外框 (Appearance)</label>
 
         {/* Background fill */}
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-[#736c62]">圖框底色</span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => onUpdateFrame(frame.id, { background: 'transparent' })}
-              className={`px-2 py-0.5 rounded text-[10px] cursor-pointer transition-colors ${
-                frame.background === 'transparent' ? 'bg-[#556354] text-white' : 'bg-[#edeae1] text-[#736c62]'
-              }`}
-            >
-              透明
-            </button>
-            <input
-              type="color"
-              value={frame.background === 'transparent' ? '#ffffff' : frame.background}
-              onChange={(e) => onUpdateFrame(frame.id, { background: e.target.value })}
-              className="w-6 h-6 rounded border border-[#d8d3c5] bg-transparent cursor-pointer"
-            />
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-[#736c62]">圖框底色</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => onUpdateFrame(frame.id, { background: 'transparent' })}
+                className={`px-2 py-0.5 rounded text-[10px] cursor-pointer transition-colors ${
+                  frame.background === 'transparent' ? 'bg-[#556354] text-white' : 'bg-[#edeae1] text-[#736c62]'
+                }`}
+              >
+                透明
+              </button>
+              <input
+                type="color"
+                value={frame.background === 'transparent' ? '#ffffff' : frame.background}
+                onChange={(e) => onUpdateFrame(frame.id, { background: e.target.value })}
+                className="w-6 h-6 rounded border border-[#d8d3c5] bg-transparent cursor-pointer"
+              />
+              <button
+                type="button"
+                onClick={() => onTriggerEyedropper?.('frame-background')}
+                title="使用滴管吸取螢幕/圖片顏色設為圖框底色"
+                className="p-1 rounded border border-[#d8d3c5] bg-[#faf9f6] hover:bg-[#edeae1] text-[#556354] cursor-pointer"
+              >
+                <Pipette className="w-3 h-3" />
+              </button>
+            </div>
           </div>
+          {recentColors && recentColors.length > 0 && (
+            <div className="flex items-center gap-1 pt-0.5 flex-wrap">
+              <span className="text-[10px] text-[#8c8275]">吸取/常用：</span>
+              {recentColors.slice(0, 6).map((col, idx) => (
+                <button
+                  key={`frame-bg-recent-${col}-${idx}`}
+                  type="button"
+                  onClick={() => onUpdateFrame(frame.id, { background: col })}
+                  title={`套用 ${col}`}
+                  className="w-3.5 h-3.5 rounded-full border border-black/15 hover:scale-120 transition-transform cursor-pointer"
+                  style={{ backgroundColor: col }}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Border settings */}
@@ -757,7 +823,18 @@ export const PropertiesPanel: React.FC<Props> = ({
           {frame.border?.width > 0 && (
             <div className="grid grid-cols-2 gap-2 pt-1">
               <div>
-                <label className="text-[10px] text-[#8c8275] block mb-0.5">邊框顏色</label>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className="text-[10px] text-[#8c8275] block">邊框顏色</label>
+                  <button
+                    type="button"
+                    onClick={() => onTriggerEyedropper?.('frame-border')}
+                    title="吸取顏色設為邊框色"
+                    className="text-[10px] text-[#556354] hover:text-[#2c2824] flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <Pipette className="w-2.5 h-2.5" />
+                    <span>吸色</span>
+                  </button>
+                </div>
                 <div className="flex items-center gap-1.5">
                   <input
                     type="color"
@@ -773,6 +850,14 @@ export const PropertiesPanel: React.FC<Props> = ({
                     className="w-6 h-6 rounded border border-[#d8d3c5] bg-transparent cursor-pointer"
                   />
                   <span className="text-[10px] font-mono text-[#736c62]">{frame.border?.color}</span>
+                  <button
+                    type="button"
+                    onClick={() => onTriggerEyedropper?.('frame-border')}
+                    title="吸取顏色設為邊框色"
+                    className="p-1 rounded border border-[#d8d3c5] bg-[#faf9f6] hover:bg-[#edeae1] text-[#556354] cursor-pointer ml-auto"
+                  >
+                    <Pipette className="w-3 h-3" />
+                  </button>
                 </div>
               </div>
 
@@ -1895,7 +1980,7 @@ export const PropertiesPanel: React.FC<Props> = ({
               <Italic className="w-4 h-4" />
             </button>
 
-            <div className="flex-1 flex items-center gap-2 bg-[#ffffff] border border-[#d8d3c5] rounded px-2 py-1">
+            <div className="flex-1 flex items-center gap-1.5 bg-[#ffffff] border border-[#d8d3c5] rounded px-2 py-1">
               <input
                 type="color"
                 value={frame.text.color}
@@ -1910,8 +1995,39 @@ export const PropertiesPanel: React.FC<Props> = ({
                 className="w-5 h-5 rounded border border-[#d8d3c5] bg-transparent cursor-pointer"
               />
               <span className="text-[10px] font-mono text-[#484138]">{frame.text.color}</span>
+              <button
+                type="button"
+                onClick={() => onTriggerEyedropper?.('text-color')}
+                title="使用滴管吸取螢幕/圖片顏色設為文字顏色"
+                className="ml-auto p-0.5 text-[#556354] hover:text-[#2c2824] cursor-pointer"
+              >
+                <Pipette className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
+
+          {recentColors && recentColors.length > 0 && (
+            <div className="flex items-center gap-1 pt-0.5 flex-wrap">
+              <span className="text-[10px] text-[#8c8275]">吸取/常用：</span>
+              {recentColors.slice(0, 6).map((col, idx) => (
+                <button
+                  key={`text-recent-${col}-${idx}`}
+                  type="button"
+                  onClick={() =>
+                    onUpdateFrame(frame.id, {
+                      text: {
+                        ...frame.text!,
+                        color: col,
+                      },
+                    })
+                  }
+                  title={`套用 ${col}`}
+                  className="w-3.5 h-3.5 rounded-full border border-black/15 hover:scale-120 transition-transform cursor-pointer"
+                  style={{ backgroundColor: col }}
+                />
+              ))}
+            </div>
+          )}
 
           {/* Alignment */}
           <div className="space-y-1">

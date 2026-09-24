@@ -479,3 +479,35 @@ export async function renderProjectToCanvas(
 
   return outCanvas;
 }
+
+/**
+ * Samples the color (in hex format '#rrggbb') of the canvas at the given canvas coordinates.
+ * Renders the canvas layers and extracts the exact RGB pixel.
+ */
+export async function sampleCanvasPixel(
+  canvas: CanvasData,
+  frames: FrameData[],
+  canvasX: number,
+  canvasY: number
+): Promise<string> {
+  const project: ProjectData = {
+    version: '1.0.0',
+    canvas,
+    frames,
+    overlapMode: 'allowed',
+  };
+
+  const renderedCanvas = await renderProjectToCanvas(project, 1);
+  const ctx = renderedCanvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return '#ffffff';
+
+  const px = Math.floor(Math.max(0, Math.min(canvas.width - 1, canvasX)));
+  const py = Math.floor(Math.max(0, Math.min(canvas.height - 1, canvasY)));
+  const pixel = ctx.getImageData(px, py, 1, 1).data;
+
+  // Convert RGB components to 6-character hex code
+  const r = pixel[0].toString(16).padStart(2, '0');
+  const g = pixel[1].toString(16).padStart(2, '0');
+  const b = pixel[2].toString(16).padStart(2, '0');
+  return `#${r}${g}${b}`.toLowerCase();
+}
