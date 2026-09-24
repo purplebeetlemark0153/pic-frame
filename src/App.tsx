@@ -942,6 +942,19 @@ export default function App() {
     [pushHistorySnapshot]
   );
 
+  // Auto-fit Zoom to Viewport bounds
+  const handleFitZoom = useCallback(() => {
+    const viewportEl = document.getElementById('canvas-viewport');
+    let availW = viewportEl ? viewportEl.clientWidth - 110 : window.innerWidth - 650;
+    let availH = viewportEl ? viewportEl.clientHeight - 110 : window.innerHeight - 170;
+    availW = Math.max(240, availW);
+    availH = Math.max(240, availH);
+    const fitRatio = Math.min(availW / canvas.width, availH / canvas.height);
+    const clampedFit = Math.min(1.5, Math.max(0.25, Math.round(fitRatio * 100) / 100));
+    setCanvas((prev) => ({ ...prev, zoom: clampedFit }));
+    showToast(`畫布縮放已最適化為：${Math.round(clampedFit * 100)}%`);
+  }, [canvas.width, canvas.height, showToast]);
+
   // Save / Open Project
   const handleSaveProject = () => {
     const project: ProjectData = {
@@ -1137,7 +1150,7 @@ export default function App() {
         zoom={canvas.zoom}
         onZoomChange={(newZoom) => setCanvas((prev) => ({ ...prev, zoom: newZoom }))}
         onResetZoom={() => setCanvas((prev) => ({ ...prev, zoom: 1 }))}
-        onFitZoom={() => setCanvas((prev) => ({ ...prev, zoom: 0.7 }))}
+        onFitZoom={handleFitZoom}
         onSaveProject={handleSaveProject}
         onOpenProjectFile={handleOpenProjectFile}
         onExport={handleExport}
@@ -1192,6 +1205,7 @@ export default function App() {
           onSetMode={setMode}
           onBringFront={handleBringFront}
           onReplaceImage={handleReplaceImage}
+          onZoomChange={(newZoom) => setCanvas((prev) => ({ ...prev, zoom: newZoom }))}
         />
 
         {/* Right Properties Panel */}

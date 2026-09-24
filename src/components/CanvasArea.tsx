@@ -38,6 +38,7 @@ interface Props {
   onSetMode: (mode: EditorMode) => void;
   onBringFront: (frameId: string) => void;
   onReplaceImage?: (frameId: string, file: File) => void;
+  onZoomChange?: (zoom: number) => void;
 }
 
 interface DragState {
@@ -72,6 +73,7 @@ export const CanvasArea: React.FC<Props> = ({
   onSetMode,
   onBringFront,
   onReplaceImage,
+  onZoomChange,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -83,10 +85,69 @@ export const CanvasArea: React.FC<Props> = ({
   const [activeGuides, setActiveGuides] = useState<SmartGuide[]>([]);
   const [polygonDraftPoints, setPolygonDraftPoints] = useState<Point[]>([]);
   const [overlapNotification, setOverlapNotification] = useState<string | null>(null);
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
 
   // In-line editing states
   const [editingTextFrameId, setEditingTextFrameId] = useState<string | null>(null);
   const [editingImageFrameId, setEditingImageFrameId] = useState<string | null>(null);
+
+  // Track Space bar for Figma/Photoshop style canvas panning
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !e.repeat) {
+        const activeTag = document.activeElement?.tagName;
+        if (activeTag !== 'INPUT' && activeTag !== 'TEXTAREA' && !editingTextFrameId) {
+          e.preventDefault();
+          setIsSpacePressed(true);
+        }
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsSpacePressed(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [editingTextFrameId]);
+
+  // Support Ctrl / Cmd + Mouse Wheel to zoom canvas around cursor with passive: false
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !onZoomChange) return;
+
+    const handleWheelNative = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+
+      const zoomStep = e.deltaY < 0 ? 0.08 : -0.08;
+      const nextZoom = Math.min(2.0, Math.max(0.25, Math.round((zoom + zoomStep) * 100) / 100));
+      if (nextZoom === zoom) return;
+
+      const rect = container.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left + container.scrollLeft;
+      const mouseY = e.clientY - rect.top + container.scrollTop;
+      const ratio = nextZoom / zoom;
+      const newScrollLeft = mouseX * ratio - (e.clientX - rect.left);
+      const newScrollTop = mouseY * ratio - (e.clientY - rect.top);
+
+      onZoomChange(nextZoom);
+
+      requestAnimationFrame(() => {
+        container.scrollLeft = newScrollLeft;
+        container.scrollTop = newScrollTop;
+      });
+    };
+
+    container.addEventListener('wheel', handleWheelNative, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', handleWheelNative);
+    };
+  }, [zoom, onZoomChange]);
 
   // Synchronize editing state with global mode
   useEffect(() => {
@@ -141,8 +202,41 @@ export const CanvasArea: React.FC<Props> = ({
     setTimeout(() => setOverlapNotification(null), 2500);
   };
 
+  // Viewport Pan / Background Click Handler
+  const handleViewportPointerDown = (e: React.PointerEvent) => {
+    if (isSpacePressed || e.button === 1) {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragState({
+        type: 'pan',
+        startMouse: { x: containerRef.current?.scrollLeft || 0, y: containerRef.current?.scrollTop || 0 },
+        startScreenMouse: { x: e.clientX, y: e.clientY },
+      });
+      return;
+    }
+
+    const target = e.target as HTMLElement;
+    if (target === containerRef.current || target.id === 'canvas-scroll-content') {
+      if (editingTextFrameId) {
+        setEditingTextFrameId(null);
+        onSetMode('select');
+        onCommitHistory();
+      }
+      if (editingImageFrameId) {
+        setEditingImageFrameId(null);
+        onSetMode('select');
+        onCommitHistory();
+      }
+      onSelectFrames([], false);
+    }
+  };
+
   // 1. Mouse Down Handler
   const handlePointerDown = (e: React.PointerEvent) => {
+    if (isSpacePressed || e.button === 1) {
+      handleViewportPointerDown(e);
+      return;
+    }
     if (e.button !== 0) return; // Left click only
 
     const canvasPt = screenToCanvas(e.clientX, e.clientY);
@@ -240,6 +334,10 @@ export const CanvasArea: React.FC<Props> = ({
 
   // 2. Start Frame Drag
   const handleFramePointerDown = (e: React.PointerEvent, frame: FrameData) => {
+    if (isSpacePressed || e.button === 1) {
+      handleViewportPointerDown(e);
+      return;
+    }
     e.stopPropagation();
     if (mode === 'polygon-create') return;
 
@@ -528,10 +626,23 @@ export const CanvasArea: React.FC<Props> = ({
           false
         );
       }
+
+      // E. PAN VIEWPORT (Space + Drag or Middle Click Drag)
+      else if (dragState.type === 'pan' && containerRef.current && dragState.startScreenMouse) {
+        const dx = e.clientX - dragState.startScreenMouse.x;
+        const dy = e.clientY - dragState.startScreenMouse.y;
+        containerRef.current.scrollLeft = dragState.startMouse.x - dx;
+        containerRef.current.scrollTop = dragState.startMouse.y - dy;
+      }
     };
 
     const handlePointerUp = () => {
       setActiveGuides([]);
+
+      if (dragState.type === 'pan') {
+        setDragState(null);
+        return;
+      }
 
       if (dragState.type === 'image-move') {
         onCommitHistory();
@@ -636,11 +747,18 @@ export const CanvasArea: React.FC<Props> = ({
   // Sort frames by zIndex ascending for visual rendering
   const sortedFrames = [...frames].sort((a, b) => a.zIndex - b.zIndex);
 
+  // Scaled dimensions to ensure scrolling bounds are physically accurate at all zoom levels
+  const scaledWidth = Math.round(canvas.width * zoom);
+  const scaledHeight = Math.round(canvas.height * zoom);
+
   return (
     <div
       ref={containerRef}
       id="canvas-viewport"
-      className="flex-1 bg-[#ede9df] overflow-auto relative flex items-center justify-center p-12 select-none"
+      onPointerDown={handleViewportPointerDown}
+      className={`flex-1 bg-[#ede9df] overflow-auto relative select-none ${
+        isSpacePressed ? (dragState?.type === 'pan' ? 'cursor-grabbing' : 'cursor-grab') : ''
+      }`}
     >
       {/* Overlap Revert Alert Notification */}
       {overlapNotification && (
@@ -677,17 +795,38 @@ export const CanvasArea: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Actual Canvas */}
+      {/* Scroll Content Wrapper: fills viewport when smaller, expands when larger */}
       <div
-        ref={canvasRef}
-        id="canvas-main"
-        data-role="canvas-background"
-        onPointerDown={handlePointerDown}
+        id="canvas-scroll-content"
+        className="min-w-full min-h-full p-12 flex items-center justify-center shrink-0 box-border"
         style={{
-          width: canvas.width,
-          height: canvas.height,
-          transform: `scale(${zoom})`,
-          transformOrigin: 'center center',
+          width: 'max-content',
+          height: 'max-content',
+        }}
+      >
+        {/* Scaled Bounds Container: reserves exact layout width and height so scrollbars can reach top & bottom */}
+        <div
+          id="canvas-scaled-container"
+          style={{
+            width: scaledWidth,
+            height: scaledHeight,
+            minWidth: scaledWidth,
+            minHeight: scaledHeight,
+            position: 'relative',
+            flexShrink: 0,
+          }}
+        >
+          {/* Actual Canvas */}
+          <div
+            ref={canvasRef}
+            id="canvas-main"
+            data-role="canvas-background"
+            onPointerDown={handlePointerDown}
+            style={{
+              width: canvas.width,
+              height: canvas.height,
+              transform: `scale(${zoom})`,
+              transformOrigin: 'top left',
           backgroundColor:
             canvas.backgroundType === 'solid'
               ? canvas.background || '#ffffff'
@@ -1428,5 +1567,7 @@ export const CanvasArea: React.FC<Props> = ({
         />
       </div>
     </div>
+  </div>
+</div>
   );
 };

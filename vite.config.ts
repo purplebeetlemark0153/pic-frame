@@ -5,8 +5,8 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    // 部署到 GitHub Pages (pic-frame) 所需的基礎路徑
-    base: '/pic-frame/',
+    // 部署到 GitHub Pages (pic-frame) 所需的基礎路徑 (GitHub Actions 自動設為 /pic-frame/，本地與預覽環境使用相對路徑 ./)
+    base: process.env.GITHUB_ACTIONS ? '/pic-frame/' : './',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

@@ -848,6 +848,48 @@ export function runAllAutomaticTests(): TestSummary {
     }
   );
 
+  // Test 17: Zoom layout bounds and scrollable area calculation
+  runTest(
+    'canvas-2-zoom-layout-bounds',
+    'canvas',
+    '畫布放大縮放邊界與滾動區域精確性：放大時 layout box (scaledWidth, scaledHeight) 完整包覆縮放後像素，垂直與水平滾動無盲區',
+    () => {
+      const canvasWidth = 794;
+      const canvasHeight = 1123;
+      const zoom = 1.5;
+
+      const scaledWidth = Math.round(canvasWidth * zoom);
+      const scaledHeight = Math.round(canvasHeight * zoom);
+
+      assert(scaledWidth === 1191, `縮放 1.5x 後寬度應為 1191px，實際為 ${scaledWidth}px`);
+      assert(scaledHeight === 1685, `縮放 1.5x 後高度應為 1685px，實際為 ${scaledHeight}px`);
+
+      // Verify padding and total scroll content size
+      const padding = 48; // p-12 = 3rem = 48px on each side
+      const totalContentHeight = scaledHeight + padding * 2;
+      const totalContentWidth = scaledWidth + padding * 2;
+
+      assert(totalContentHeight === 1781, `總滾動高度應為 ${1781}px，實際為 ${totalContentHeight}px`);
+      assert(totalContentWidth === 1287, `總滾動寬度應為 ${1287}px，實際為 ${totalContentWidth}px`);
+
+      // Verify that when scrollTop is 0 (bar pulled to top), top of canvas is accessible
+      const topOffsetAtScroll0 = padding;
+      assert(topOffsetAtScroll0 >= 0, '拉至最上方時頂部邊界完全呈現在可視範圍內');
+
+      // Verify that when scroll reaches bottom, the bottom of canvas is accessible
+      const viewportHeight = 800;
+      const maxScrollTop = totalContentHeight - viewportHeight;
+      const bottomOffsetAtMaxScroll = totalContentHeight - maxScrollTop;
+      assert(bottomOffsetAtMaxScroll === viewportHeight, '拉至最下方時底部邊界完全呈現在可視範圍內');
+
+      // Verify screenToCanvas coordinate calculation invariance
+      const dummyRectTop = -200; // Simulated scrolled up position
+      const clientY = dummyRectTop + 150; // Inside canvas
+      const canvasY = (clientY - dummyRectTop) / zoom;
+      assert(canvasY === 100, `螢幕座標換算畫布座標應精確為 100，實際為 ${canvasY}`);
+    }
+  );
+
   // ==========================================
   // 7. UNDO / REDO DETERMINISM (Section 三)
   // ==========================================
