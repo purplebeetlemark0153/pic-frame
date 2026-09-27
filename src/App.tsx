@@ -27,6 +27,7 @@ import { ContentSwitchModal } from './components/ContentSwitchModal';
 import { EyedropperResultModal } from './components/EyedropperResultModal';
 import { sampleCanvasPixel } from './utils/canvasRenderer';
 import { fileToBase64, exportToPNG, exportToJPG, exportToPDF, exportToDOCX, saveProjectToFile, loadProjectFromFile } from './utils/exportUtils';
+import { ChevronLeft } from 'lucide-react';
 
 import { CanvasPresetInfo } from './types';
 
@@ -155,6 +156,13 @@ export default function App() {
   const [mode, setMode] = useState<EditorMode>('select');
   const [overlapMode, setOverlapMode] = useState<OverlapMode>('allowed');
   const [showGrid, setShowGrid] = useState<boolean>(false);
+  const [isPropertiesOpen, setIsPropertiesOpen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 768;
+    }
+    return true;
+  });
+  const [rightPanelTab, setRightPanelTab] = useState<'properties' | 'settings'>('settings');
 
   // Dialog Requests
   const [rotationDialogReq, setRotationDialogReq] = useState<RotationDialogRequest | null>(null);
@@ -532,6 +540,9 @@ export default function App() {
         return next;
       });
     }
+    if (ids.length > 0) {
+      setRightPanelTab('properties');
+    }
   }, []);
 
   // Add Frame
@@ -850,6 +861,53 @@ export default function App() {
     },
     [pushHistorySnapshot]
   );
+
+  // Delete All Currently Selected Frames (for Mobile quick action)
+  const handleDeleteSelected = useCallback(() => {
+    if (selectedFrameIds.length === 0) return;
+    setFrames((prev) => {
+      const updated = prev.filter((f) => !selectedFrameIds.includes(f.id));
+      framesRef.current = updated;
+      selectedFrameIdsRef.current = [];
+      pushHistorySnapshot({ frames: updated, selectedFrameIds: [] });
+      return updated;
+    });
+    setSelectedFrameIds([]);
+  }, [selectedFrameIds, pushHistorySnapshot]);
+
+  // Duplicate All Currently Selected Frames (for Mobile quick action)
+  const handleDuplicateSelected = useCallback(() => {
+    if (selectedFrameIds.length === 0) return;
+    const maxZ = framesRef.current.reduce((max, f) => Math.max(max, f.zIndex), 0);
+    const newFrames: FrameData[] = [];
+    const newIds: string[] = [];
+
+    selectedFrameIds.forEach((id, idx) => {
+      const source = framesRef.current.find((f) => f.id === id);
+      if (source) {
+        const newId = 'frame-copy-' + Date.now() + '-' + idx;
+        newIds.push(newId);
+        newFrames.push({
+          ...JSON.parse(JSON.stringify(source)),
+          id: newId,
+          x: source.x + 20,
+          y: source.y + 20,
+          zIndex: maxZ + 1 + idx,
+        });
+      }
+    });
+
+    if (newFrames.length > 0) {
+      setFrames((prev) => {
+        const updated = [...prev, ...newFrames];
+        framesRef.current = updated;
+        selectedFrameIdsRef.current = newIds;
+        pushHistorySnapshot({ frames: updated, selectedFrameIds: newIds });
+        return updated;
+      });
+      setSelectedFrameIds(newIds);
+    }
+  }, [selectedFrameIds, pushHistorySnapshot]);
 
   // Layer Controls (Section 35)
   const handleBringFront = useCallback(
@@ -1310,6 +1368,18 @@ export default function App() {
         handleActivateEyedropper('any');
       }
 
+      // Toggle side panel shortcut ('M' or 'm')
+      if ((e.key === 'm' || e.key === 'M') && !isInput && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        setIsPropertiesOpen((prev) => {
+          const next = !prev;
+          if (next) {
+            setRightPanelTab('settings');
+          }
+          return next;
+        });
+      }
+
       // Escape: Deselect all and exit eyedropper
       if (e.key === 'Escape') {
         setSelectedFrameIds([]);
@@ -1347,11 +1417,21 @@ export default function App() {
         onSaveProject={handleSaveProject}
         onOpenProjectFile={handleOpenProjectFile}
         onExport={handleExport}
+        isSidePanelOpen={isPropertiesOpen}
+        onToggleSidePanel={() => {
+          setIsPropertiesOpen((prev) => {
+            const next = !prev;
+            if (next) {
+              setRightPanelTab('settings');
+            }
+            return next;
+          });
+        }}
       />
 
       {/* Main Workspace Area (Left Toolbar + Center Canvas + Right Properties) */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Left Toolbar */}
+        {/* Left Toolbar / Mobile Bottom Dock */}
         <Toolbar
           mode={mode}
           showGrid={showGrid}
@@ -1366,8 +1446,20 @@ export default function App() {
           onAddFrame={handleAddFrame}
           onAddTextFrame={handleAddTextFrame}
           onUploadImageToSelectedOrNew={handleUploadImageToSelectedOrNew}
-          onSelectBackground={() => setSelectedFrameIds([])}
+          onSelectBackground={() => {
+            setSelectedFrameIds([]);
+            setRightPanelTab('properties');
+            setIsPropertiesOpen(true);
+          }}
           onActivateEyedropper={() => handleActivateEyedropper('any')}
+          onToggleProperties={() => {
+            setIsPropertiesOpen((prev) => {
+              if (!prev) setRightPanelTab('properties');
+              return !prev;
+            });
+          }}
+          isPropertiesOpen={isPropertiesOpen}
+          selectedCount={selectedFrameIds.length}
         />
 
         {/* Center Canvas Area */}
@@ -1401,9 +1493,34 @@ export default function App() {
           onReplaceImage={handleReplaceImage}
           onZoomChange={(newZoom) => setCanvas((prev) => ({ ...prev, zoom: newZoom }))}
           onCanvasSampleColor={handleCanvasSampleColor}
+          onOpenProperties={() => {
+            setIsPropertiesOpen(true);
+            setRightPanelTab('properties');
+          }}
+          onDeleteSelectedFrames={handleDeleteSelected}
+          onDuplicateSelectedFrames={handleDuplicateSelected}
         />
 
-        {/* Right Properties Panel */}
+        {/* Floating Quick Re-open Button when side panel is collapsed */}
+        {!isPropertiesOpen && (
+          <button
+            id="btn-reopen-side-panel"
+            type="button"
+            onClick={() => {
+              setIsPropertiesOpen(true);
+              setRightPanelTab('settings');
+            }}
+            className="fixed right-0 top-1/2 -translate-y-1/2 z-30 bg-[#faf9f5] hover:bg-[#ede8db] active:bg-[#e2ddd0] text-[#556354] border border-r-0 border-[#d8d3c5] rounded-l-xl px-2 py-3 shadow-md hover:shadow-lg flex flex-col items-center gap-1.5 cursor-pointer transition-all hover:-translate-x-0.5 select-none"
+            title="展開側邊視窗 (畫布與專案設定)"
+          >
+            <ChevronLeft className="w-4 h-4 text-[#556354]" />
+            <span className="text-[11px] font-semibold text-[#556354] tracking-widest [writing-mode:vertical-lr] py-0.5 select-none">
+              側邊面板
+            </span>
+          </button>
+        )}
+
+        {/* Right Properties Panel / Collapsible Window (Bottom Drawer on Mobile) */}
         <PropertiesPanel
           selectedFrames={selectedFrames}
           canvas={canvas}
@@ -1423,6 +1540,23 @@ export default function App() {
           onDistributeMulti={handleDistributeMulti}
           onTriggerEyedropper={handleActivateEyedropper}
           recentColors={recentColors}
+          isOpen={isPropertiesOpen}
+          onClose={() => setIsPropertiesOpen(false)}
+          activeTab={rightPanelTab}
+          onTabChange={setRightPanelTab}
+          onChangePreset={handleChangePreset}
+          overlapMode={overlapMode}
+          onToggleOverlapMode={() => {
+            const next = overlapMode === 'allowed' ? 'forbidden' : 'allowed';
+            setOverlapMode(next);
+            showToast(`已切換為：${next === 'allowed' ? '允許重疊 (自動置頂)' : '禁止重疊 (碰撞還原)'}`);
+          }}
+          zoom={canvas.zoom}
+          onZoomChange={(newZoom) => setCanvas((prev) => ({ ...prev, zoom: newZoom }))}
+          onResetZoom={() => setCanvas((prev) => ({ ...prev, zoom: 1 }))}
+          onFitZoom={handleFitZoom}
+          onSaveProject={handleSaveProject}
+          onOpenProjectFile={handleOpenProjectFile}
         />
       </div>
 

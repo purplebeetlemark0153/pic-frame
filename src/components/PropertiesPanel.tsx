@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   FrameData,
   CanvasData,
@@ -6,6 +6,8 @@ import {
   ImageEffects,
   PaperTextureType,
   EyedropperTarget,
+  CanvasPreset,
+  OverlapMode,
 } from '../types';
 import {
   Copy,
@@ -14,6 +16,7 @@ import {
   ChevronsDown,
   ChevronUp,
   ChevronDown,
+  ChevronRight,
   RotateCw,
   Image as ImageIcon,
   Type,
@@ -42,6 +45,11 @@ import {
   Scroll,
   Crop,
   Pipette,
+  X,
+  Layers,
+  ShieldAlert,
+  FolderOpen,
+  Save,
 } from 'lucide-react';
 
 interface Props {
@@ -64,6 +72,20 @@ interface Props {
   onDistributeMulti: (direction: 'horizontal' | 'vertical') => void;
   onTriggerEyedropper?: (target?: EyedropperTarget) => void;
   recentColors?: string[];
+  isOpen?: boolean;
+  onClose?: () => void;
+  // Collapsible Window Tabs & Settings
+  activeTab?: 'properties' | 'settings';
+  onTabChange?: (tab: 'properties' | 'settings') => void;
+  onChangePreset?: (preset: CanvasPreset, customWidth?: number, customHeight?: number) => void;
+  overlapMode?: OverlapMode;
+  onToggleOverlapMode?: () => void;
+  zoom?: number;
+  onZoomChange?: (zoom: number) => void;
+  onResetZoom?: () => void;
+  onFitZoom?: () => void;
+  onSaveProject?: () => void;
+  onOpenProjectFile?: (file: File) => void;
 }
 
 export const PropertiesPanel: React.FC<Props> = ({
@@ -85,17 +107,313 @@ export const PropertiesPanel: React.FC<Props> = ({
   onDistributeMulti,
   onTriggerEyedropper,
   recentColors = [],
+  isOpen = true,
+  onClose,
+  activeTab = 'settings',
+  onTabChange,
+  onChangePreset,
+  overlapMode = 'allowed',
+  onToggleOverlapMode,
+  zoom = 1,
+  onZoomChange,
+  onResetZoom,
+  onFitZoom,
+  onSaveProject,
+  onOpenProjectFile,
 }) => {
   const replaceImgInputRef = useRef<HTMLInputElement>(null);
   const bgImgInputRef = useRef<HTMLInputElement>(null);
+  const projectFileInputRef = useRef<HTMLInputElement>(null);
+
+  const [customW, setCustomW] = useState(canvas.width);
+  const [customH, setCustomH] = useState(canvas.height);
+
+  useEffect(() => {
+    setCustomW(canvas.width);
+    setCustomH(canvas.height);
+  }, [canvas.width, canvas.height]);
+
+  const renderSettingsContent = () => (
+    <div className="flex flex-col gap-4 text-xs text-[#38332c]">
+      {/* 1. Canvas Preset */}
+      <div className="space-y-2">
+        <label className="text-xs font-semibold text-[#556354] block">畫布規格尺寸</label>
+        <div className="grid grid-cols-2 gap-2">
+          {(['A4_PORTRAIT', 'A4_LANDSCAPE', 'A3', 'A5'] as CanvasPreset[]).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => onChangePreset?.(p)}
+              className={`p-2.5 rounded-lg border text-left text-xs transition-colors cursor-pointer ${
+                canvas.preset === p
+                  ? 'bg-[#556354] text-white border-[#556354] font-medium shadow-xs'
+                  : 'bg-[#ffffff] text-[#4a433b] border-[#dcd7cb] hover:bg-[#f4f2eb]'
+              }`}
+            >
+              <div className="font-medium">
+                {p === 'A4_PORTRAIT' ? 'A4 直式' : p === 'A4_LANDSCAPE' ? 'A4 橫式' : p}
+              </div>
+              <div
+                className={`text-[10px] mt-0.5 ${
+                  canvas.preset === p ? 'text-white/80' : 'text-[#8c8275]'
+                }`}
+              >
+                {p === 'A4_PORTRAIT'
+                  ? '210 × 297 mm'
+                  : p === 'A4_LANDSCAPE'
+                  ? '297 × 210 mm'
+                  : p === 'A3'
+                  ? '297 × 420 mm'
+                  : '148 × 210 mm'}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Custom Canvas Dimensions Form */}
+        <div
+          className={`p-3 rounded-lg border space-y-2 mt-1 transition-colors ${
+            canvas.preset === 'CUSTOM'
+              ? 'bg-[#f4efe4] border-[#556354] ring-1 ring-[#556354]/30'
+              : 'bg-[#f3efe4] border-[#ded8cb]'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-[#554e44] block">自訂畫布尺寸 (像素)</span>
+            {canvas.preset === 'CUSTOM' && (
+              <span className="text-[10px] bg-[#556354] text-white px-1.5 py-0.2 rounded font-medium">使用中</span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <span className="text-[10px] text-[#736c62] block mb-0.5">寬度 (px)</span>
+              <input
+                type="number"
+                min="100"
+                max="4000"
+                value={customW}
+                onChange={(e) => setCustomW(Number(e.target.value))}
+                className="w-full bg-[#ffffff] border border-[#dcd7cb] rounded px-2 py-1 text-xs text-[#282521] focus:outline-hidden focus:border-[#556354]"
+              />
+            </div>
+            <div>
+              <span className="text-[10px] text-[#736c62] block mb-0.5">高度 (px)</span>
+              <input
+                type="number"
+                min="100"
+                max="4000"
+                value={customH}
+                onChange={(e) => setCustomH(Number(e.target.value))}
+                className="w-full bg-[#ffffff] border border-[#dcd7cb] rounded px-2 py-1 text-xs text-[#282521] focus:outline-hidden focus:border-[#556354]"
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const safeW = Math.max(100, Math.min(4000, Number(customW) || 800));
+              const safeH = Math.max(100, Math.min(4000, Number(customH) || 600));
+              setCustomW(safeW);
+              setCustomH(safeH);
+              onChangePreset?.('CUSTOM', safeW, safeH);
+            }}
+            className="w-full py-1.5 bg-[#556354] hover:bg-[#465345] text-white rounded text-xs font-medium transition-colors cursor-pointer shadow-xs"
+          >
+            套用自訂尺寸
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Overlap Mode */}
+      <div className="space-y-2 pt-2 border-t border-[#e5e1d8]">
+        <label className="text-xs font-semibold text-[#556354] block">重疊設定</label>
+        <button
+          type="button"
+          onClick={onToggleOverlapMode}
+          className={`w-full p-2.5 rounded-lg border flex items-center justify-between text-xs transition-colors cursor-pointer ${
+            overlapMode === 'allowed'
+              ? 'bg-[#ffffff] border-[#dcd7cb] text-[#463f37] hover:bg-[#f4f2eb]'
+              : 'bg-[#faf0e8] border-[#dfbfa8] text-[#874f2d] hover:bg-[#f5e5da]'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {overlapMode === 'allowed' ? (
+              <Layers className="w-4 h-4 text-[#556354]" />
+            ) : (
+              <ShieldAlert className="w-4 h-4 text-[#874f2d]" />
+            )}
+            <span className="font-medium">
+              {overlapMode === 'allowed' ? '允許重疊 (自動置頂)' : '禁止重疊 (碰撞還原)'}
+            </span>
+          </div>
+          <span className="text-[10px] text-[#556354] underline">切換</span>
+        </button>
+      </div>
+
+      {/* 3. Canvas Zoom Slider */}
+      <div className="space-y-2 pt-2 border-t border-[#e5e1d8]">
+        <div className="flex justify-between items-center text-xs">
+          <span className="font-semibold text-[#556354]">畫布縮放比例</span>
+          <span className="font-mono text-[#2c2824]">{Math.round((zoom ?? 1) * 100)}%</span>
+        </div>
+        <input
+          type="range"
+          min="0.25"
+          max="2"
+          step="0.01"
+          value={Math.min(2, Math.max(0.25, zoom ?? 1))}
+          onChange={(e) => onZoomChange?.(parseFloat(e.target.value))}
+          className="w-full h-2 accent-[#556354] bg-[#ded9ce] rounded-full cursor-pointer"
+        />
+        <div className="flex gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onResetZoom}
+            className="flex-1 py-1.5 bg-[#edeae1] rounded text-xs text-[#4a433b] hover:bg-[#ded9ce] transition-colors cursor-pointer"
+          >
+            重設 100%
+          </button>
+          <button
+            type="button"
+            onClick={onFitZoom}
+            className="flex-1 py-1.5 bg-[#edeae1] rounded text-xs text-[#4a433b] hover:bg-[#ded9ce] transition-colors cursor-pointer"
+          >
+            最適大小
+          </button>
+        </div>
+      </div>
+
+      {/* 4. Project Save & Open */}
+      <div className="space-y-2 pt-2 border-t border-[#e5e1d8]">
+        <label className="text-xs font-semibold text-[#556354] block">專案檔案</label>
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            ref={projectFileInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files && e.target.files[0]) {
+                onOpenProjectFile?.(e.target.files[0]);
+                e.target.value = '';
+              }
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => projectFileInputRef.current?.click()}
+            className="py-2 px-3 bg-[#ffffff] border border-[#dcd7cb] rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 text-[#463f37] hover:bg-[#f4f2eb] transition-colors cursor-pointer"
+          >
+            <FolderOpen className="w-4 h-4 text-[#736c62]" />
+            <span>開啟專案</span>
+          </button>
+          <button
+            type="button"
+            onClick={onSaveProject}
+            className="py-2 px-3 bg-[#ffffff] border border-[#dcd7cb] rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 text-[#463f37] hover:bg-[#f4f2eb] transition-colors cursor-pointer"
+          >
+            <Save className="w-4 h-4 text-[#736c62]" />
+            <span>儲存專案</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderPanelContainer = (id: string, title: string, content: React.ReactNode) => (
+    <>
+      {/* Mobile/Tablet Dimmed Backdrop */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-xs z-40 md:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Main Collapsible Side Window (Right column on desktop/laptop covering 20%-30% screen width, bottom sheet on mobile) */}
+      <aside
+        id={id}
+        aria-hidden={!isOpen}
+        className={`
+          fixed bottom-0 left-0 right-0 max-h-[85vh] rounded-t-2xl shadow-2xl z-50
+          md:static md:max-h-none md:rounded-none md:shadow-none md:z-10
+          bg-[#faf9f5] border-t md:border-t-0 border-[#e5e1d8]
+          flex flex-col gap-4 text-[#38332c] overflow-y-auto select-none shrink-0
+          transition-all duration-300 ease-in-out
+          ${
+            isOpen
+              ? 'translate-y-0 w-full md:w-[25%] md:min-w-[280px] md:max-w-[400px] p-4 md:border-l opacity-100'
+              : 'translate-y-full max-md:hidden md:w-0 md:p-0 md:border-l-0 md:opacity-0 md:overflow-hidden pointer-events-none'
+          }
+        `}
+      >
+        {/* Top Header of Collapsible Window (for both desktop and mobile) */}
+        <div className="flex flex-col -mt-1 pb-3 border-b border-[#e5e1d8] gap-2">
+          {/* Mobile Handle */}
+          <div className="w-10 h-1 bg-[#d5cfc2] rounded-full mx-auto mb-1 md:hidden" />
+
+          <div className="flex items-center justify-between gap-1.5">
+            {/* Tab switchers: 屬性面板 vs 畫布設定 */}
+            <div className="flex items-center bg-[#edeae1] p-0.5 rounded-lg text-xs">
+              <button
+                type="button"
+                id="tab-btn-properties"
+                onClick={() => onTabChange?.('properties')}
+                className={`px-2.5 py-1 rounded-md font-medium text-xs transition-all cursor-pointer ${
+                  activeTab === 'properties'
+                    ? 'bg-white text-[#282521] shadow-xs font-semibold'
+                    : 'text-[#6e675d] hover:text-[#282521]'
+                }`}
+              >
+                屬性面板
+              </button>
+              <button
+                type="button"
+                id="tab-btn-settings"
+                onClick={() => onTabChange?.('settings')}
+                className={`px-2.5 py-1 rounded-md font-medium text-xs transition-all cursor-pointer ${
+                  activeTab === 'settings'
+                    ? 'bg-white text-[#282521] shadow-xs font-semibold'
+                    : 'text-[#6e675d] hover:text-[#282521]'
+                }`}
+              >
+                畫布設定
+              </button>
+            </div>
+
+            {/* Collapse Button */}
+            {onClose && (
+              <button
+                type="button"
+                id="btn-collapse-properties"
+                onClick={onClose}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-[#736c62] hover:text-[#282521] hover:bg-[#edeae1] active:bg-[#ded9cc] transition-colors cursor-pointer group"
+                title="收合側邊視窗 (快捷鍵: M 或 Esc)"
+              >
+                <span className="text-[11px] font-medium text-[#736c62] group-hover:text-[#282521]">收合</span>
+                <ChevronRight className="w-4 h-4 text-[#736c62] group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            )}
+          </div>
+
+          {/* Subtitle / Context Indicator */}
+          <div className="flex items-center justify-between text-[11px] text-[#787166]">
+            <span>{activeTab === 'settings' ? '畫布尺寸、碰撞防護與專案' : title}</span>
+          </div>
+        </div>
+
+        {activeTab === 'settings' ? renderSettingsContent() : content}
+      </aside>
+    </>
+  );
 
   // 1. MULTI-SELECT MODE (Section 38)
   if (selectedFrames.length > 1) {
-    return (
-      <aside
-        id="properties-panel-multi"
-        className="w-72 bg-[#faf9f5] border-l border-[#e5e1d8] p-4 flex flex-col gap-5 text-[#38332c] overflow-y-auto select-none shrink-0"
-      >
+    return renderPanelContainer(
+      'properties-panel-multi',
+      `多選物件對齊 (${selectedFrames.length} 個)`,
+      <>
         <div className="border-b border-[#e5e1d8] pb-3">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-[#556354]">多選物件對齊</h2>
@@ -216,17 +534,16 @@ export const PropertiesPanel: React.FC<Props> = ({
             </button>
           </div>
         </div>
-      </aside>
+      </>
     );
   }
 
   // 2. CANVAS SETTINGS (When 0 frames selected)
   if (selectedFrames.length === 0) {
-    return (
-      <aside
-        id="properties-panel-canvas"
-        className="w-72 bg-[#faf9f5] border-l border-[#e5e1d8] p-4 flex flex-col gap-5 text-[#38332c] overflow-y-auto select-none shrink-0"
-      >
+    return renderPanelContainer(
+      'properties-panel-canvas',
+      '畫布背景屬性',
+      <>
         <div className="border-b border-[#e5e1d8] pb-3 space-y-1.5">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-[#556354]">畫布屬性</h2>
@@ -606,18 +923,17 @@ export const PropertiesPanel: React.FC<Props> = ({
             </div>
           )}
         </div>
-      </aside>
+      </>
     );
   }
 
   // 3. SINGLE FRAME PROPERTIES
   const frame = selectedFrames[0];
 
-  return (
-    <aside
-      id="properties-panel-frame"
-      className="w-72 bg-[#faf9f5] border-l border-[#e5e1d8] p-4 flex flex-col gap-5 text-[#38332c] overflow-y-auto select-none shrink-0"
-    >
+  return renderPanelContainer(
+    'properties-panel-frame',
+    `圖框屬性 (${frame.contentType === 'text' ? '文字' : frame.contentType === 'image' ? '圖片' : '空圖框'})`,
+    <>
       <input
         ref={replaceImgInputRef}
         type="file"
@@ -2096,6 +2412,6 @@ export const PropertiesPanel: React.FC<Props> = ({
           </div>
         </div>
       )}
-    </aside>
+    </>
   );
 };

@@ -20,7 +20,7 @@ import {
 } from '../utils/geometry';
 import { buildFramePath } from '../utils/canvasRenderer';
 import { getPaperTextureSvgDataUri } from '../utils/texturePatterns';
-import { RotateCw, AlertCircle, Type, Upload, Check, RefreshCw, Move, Crop, Pipette } from 'lucide-react';
+import { RotateCw, AlertCircle, Type, Upload, Check, RefreshCw, Move, Crop, Pipette, SlidersHorizontal, Copy, Trash2, ChevronsUp } from 'lucide-react';
 
 interface Props {
   canvas: CanvasData;
@@ -40,6 +40,9 @@ interface Props {
   onReplaceImage?: (frameId: string, file: File) => void;
   onZoomChange?: (zoom: number) => void;
   onCanvasSampleColor?: (canvasX: number, canvasY: number) => void;
+  onOpenProperties?: () => void;
+  onDeleteSelectedFrames?: () => void;
+  onDuplicateSelectedFrames?: () => void;
 }
 
 interface DragState {
@@ -76,6 +79,9 @@ export const CanvasArea: React.FC<Props> = ({
   onReplaceImage,
   onZoomChange,
   onCanvasSampleColor,
+  onOpenProperties,
+  onDeleteSelectedFrames,
+  onDuplicateSelectedFrames,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -148,6 +154,77 @@ export const CanvasArea: React.FC<Props> = ({
     container.addEventListener('wheel', handleWheelNative, { passive: false });
     return () => {
       container.removeEventListener('wheel', handleWheelNative);
+    };
+  }, [zoom, onZoomChange]);
+
+  // Touch gesture handling: 2-finger pinch-to-zoom and 2-finger pan on phones & tablets
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let touchStartDist = 0;
+    let touchStartZoom = zoom;
+    let touchStartCenter = { x: 0, y: 0 };
+    let touchStartScroll = { left: 0, top: 0 };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        touchStartDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        touchStartZoom = zoom;
+        touchStartCenter = {
+          x: (t1.clientX + t2.clientX) / 2,
+          y: (t1.clientY + t2.clientY) / 2,
+        };
+        touchStartScroll = {
+          left: container.scrollLeft,
+          top: container.scrollTop,
+        };
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && touchStartDist > 0) {
+        e.preventDefault();
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const currentDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        const currentCenter = {
+          x: (t1.clientX + t2.clientX) / 2,
+          y: (t1.clientY + t2.clientY) / 2,
+        };
+
+        // Smooth 2-finger pan
+        const panDx = currentCenter.x - touchStartCenter.x;
+        const panDy = currentCenter.y - touchStartCenter.y;
+        container.scrollLeft = touchStartScroll.left - panDx;
+        container.scrollTop = touchStartScroll.top - panDy;
+
+        // Smooth pinch zoom
+        if (onZoomChange && Math.abs(currentDist - touchStartDist) > 4) {
+          const scaleFactor = currentDist / touchStartDist;
+          const nextZoom = Math.min(2.0, Math.max(0.25, Math.round(touchStartZoom * scaleFactor * 100) / 100));
+          onZoomChange(nextZoom);
+        }
+      }
+    };
+
+    const handleTouchEnd = () => {
+      touchStartDist = 0;
+    };
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd);
+    container.addEventListener('touchcancel', handleTouchEnd);
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+      container.removeEventListener('touchcancel', handleTouchEnd);
     };
   }, [zoom, onZoomChange]);
 
@@ -1415,9 +1492,9 @@ export const CanvasArea: React.FC<Props> = ({
                   <div
                     onPointerDown={(e) => handleRotateHandlePointerDown(e, frame)}
                     title="旋轉圖框"
-                    className="absolute -top-7 left-1/2 -translate-x-1/2 w-5 h-5 bg-white border border-[#556354] rounded-full flex items-center justify-center pointer-events-auto cursor-grab active:cursor-grabbing shadow-xs hover:scale-110 transition-transform"
+                    className="absolute -top-8 left-1/2 -translate-x-1/2 w-6 h-6 sm:w-5 sm:h-5 bg-white border border-[#556354] rounded-full flex items-center justify-center pointer-events-auto cursor-grab active:cursor-grabbing shadow-xs hover:scale-110 transition-transform touch-none before:content-[''] before:absolute before:-inset-3 before:pointer-events-auto"
                   >
-                    <RotateCw className="w-2.5 h-2.5 text-[#556354]" />
+                    <RotateCw className="w-3 h-3 sm:w-2.5 sm:h-2.5 text-[#556354]" />
                   </div>
                   {/* Stem connecting top edge to rotate knob */}
                   <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-px h-2 bg-[#556354] pointer-events-none" />
@@ -1428,28 +1505,28 @@ export const CanvasArea: React.FC<Props> = ({
                     let cursor = 'nwse-resize';
 
                     if (handle === 'nw') {
-                      posStyle = { top: -5, left: -5 };
+                      posStyle = { top: -6, left: -6 };
                       cursor = 'nwse-resize';
                     } else if (handle === 'n') {
-                      posStyle = { top: -5, left: '50%', transform: 'translateX(-50%)' };
+                      posStyle = { top: -6, left: '50%', transform: 'translateX(-50%)' };
                       cursor = 'ns-resize';
                     } else if (handle === 'ne') {
-                      posStyle = { top: -5, right: -5 };
+                      posStyle = { top: -6, right: -6 };
                       cursor = 'nesw-resize';
                     } else if (handle === 'e') {
-                      posStyle = { top: '50%', right: -5, transform: 'translateY(-50%)' };
+                      posStyle = { top: '50%', right: -6, transform: 'translateY(-50%)' };
                       cursor = 'ew-resize';
                     } else if (handle === 'se') {
-                      posStyle = { bottom: -5, right: -5 };
+                      posStyle = { bottom: -6, right: -6 };
                       cursor = 'nwse-resize';
                     } else if (handle === 's') {
-                      posStyle = { bottom: -5, left: '50%', transform: 'translateX(-50%)' };
+                      posStyle = { bottom: -6, left: '50%', transform: 'translateX(-50%)' };
                       cursor = 'ns-resize';
                     } else if (handle === 'sw') {
-                      posStyle = { bottom: -5, left: -5 };
+                      posStyle = { bottom: -6, left: -6 };
                       cursor = 'nesw-resize';
                     } else if (handle === 'w') {
-                      posStyle = { top: '50%', left: -5, transform: 'translateY(-50%)' };
+                      posStyle = { top: '50%', left: -6, transform: 'translateY(-50%)' };
                       cursor = 'ew-resize';
                     }
 
@@ -1460,8 +1537,8 @@ export const CanvasArea: React.FC<Props> = ({
                         onPointerDown={(e) => handleResizeHandlePointerDown(e, frame, handle)}
                         style={{
                           position: 'absolute',
-                          width: 8,
-                          height: 8,
+                          width: 10,
+                          height: 10,
                           backgroundColor: '#ffffff',
                           border: '1.5px solid #556354',
                           borderRadius: 2,
@@ -1469,7 +1546,7 @@ export const CanvasArea: React.FC<Props> = ({
                           pointerEvents: 'auto',
                           ...posStyle,
                         }}
-                        className="hover:scale-125 transition-transform"
+                        className="hover:scale-125 transition-transform touch-none before:content-[''] before:absolute before:-inset-3 before:pointer-events-auto"
                       />
                     );
                   })}
@@ -1601,6 +1678,53 @@ export const CanvasArea: React.FC<Props> = ({
         />
       </div>
     </div>
+
+    {/* Mobile Floating Quick Action Bar when frame is selected */}
+    {selectedFrameIds.length > 0 && !editingTextFrameId && !editingImageFrameId && (
+      <div className="fixed bottom-20 md:bottom-8 left-1/2 -translate-x-1/2 z-30 bg-[#2c2824]/95 backdrop-blur-md text-white rounded-full px-3 py-1.5 shadow-2xl flex items-center gap-1 sm:gap-2 text-xs border border-white/10 animate-in fade-in slide-in-from-bottom-2 select-none">
+        {onOpenProperties && (
+          <button
+            type="button"
+            onClick={onOpenProperties}
+            className="flex items-center gap-1 px-2.5 py-1 hover:bg-white/15 rounded-full text-[11px] font-medium transition-colors cursor-pointer text-[#f0ede6]"
+            title="開啟屬性面板"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5 text-[#b0cbb0]" />
+            <span>屬性</span>
+          </button>
+        )}
+        {onBringFront && selectedFrameIds.length === 1 && (
+          <button
+            type="button"
+            onClick={() => onBringFront(selectedFrameIds[0])}
+            className="p-1.5 hover:bg-white/15 rounded-full transition-colors cursor-pointer text-white/90"
+            title="圖層置頂"
+          >
+            <ChevronsUp className="w-3.5 h-3.5" />
+          </button>
+        )}
+        {onDuplicateSelectedFrames && (
+          <button
+            type="button"
+            onClick={onDuplicateSelectedFrames}
+            className="p-1.5 hover:bg-white/15 rounded-full transition-colors cursor-pointer text-white/90"
+            title="複製圖框"
+          >
+            <Copy className="w-3.5 h-3.5" />
+          </button>
+        )}
+        {onDeleteSelectedFrames && (
+          <button
+            type="button"
+            onClick={onDeleteSelectedFrames}
+            className="p-1.5 hover:bg-red-500/30 text-red-300 rounded-full transition-colors cursor-pointer"
+            title="刪除所選圖框"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+    )}
   </div>
 </div>
   );
